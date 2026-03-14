@@ -2,6 +2,7 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from sqlalchemy import text
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -13,8 +14,22 @@ from app.api.v1 import api_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Create DB tables on startup."""
+    """Create DB tables on startup and run optional migrations."""
     Base.metadata.create_all(bind=engine)
+    # Add master_prompt column to projects if missing (e.g. existing SQLite DBs)
+    with engine.connect() as conn:
+        if "sqlite" in str(engine.url):
+            try:
+                conn.execute(text("ALTER TABLE projects ADD COLUMN master_prompt TEXT"))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+        elif "postgresql" in str(engine.url):
+            try:
+                conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS master_prompt TEXT"))
+                conn.commit()
+            except Exception:
+                conn.rollback()
     # Ensure generated/ exists (used by image generation endpoints)
     backend_dir = Path(__file__).resolve().parents[2]
     (backend_dir / "generated").mkdir(parents=True, exist_ok=True)

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 class ProjectBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
+    master_prompt: Optional[str] = None
     task_type: str = Field(default="classification", max_length=64)
 
 
@@ -18,6 +19,7 @@ class ProjectCreate(ProjectBase):
 class ProjectUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
+    master_prompt: Optional[str] = None
     task_type: Optional[str] = Field(None, max_length=64)
 
 

@@ -7,6 +7,7 @@ type Project = {
   id: number;
   name: string;
   description: string | null;
+  master_prompt: string | null;
   task_type: string;
   created_at: string;
   updated_at: string;
