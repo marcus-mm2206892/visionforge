@@ -18,7 +18,13 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -36,7 +42,11 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const IMAGE_MODELS = [
   { id: "gpt-image-1-mini", label: "GPT Image 1 Mini", costHint: "Cheapest" },
   { id: "gpt-image-1", label: "GPT Image 1", costHint: "Balanced" },
-  { id: "gpt-image-1.5", label: "GPT Image 1.5", costHint: "Best quality, most expensive" },
+  {
+    id: "gpt-image-1.5",
+    label: "GPT Image 1.5",
+    costHint: "Best quality, most expensive",
+  },
 ] as const;
 
 const TASK_LABELS: Record<string, string> = {
@@ -69,7 +79,9 @@ export function ProjectClient({ project }: { project: Project }) {
   const [savingProject, setSavingProject] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [masterPrompt, setMasterPrompt] = useState(project.master_prompt ?? "");
-  const [masterPromptEditable, setMasterPromptEditable] = useState(!project.master_prompt);
+  const [masterPromptEditable, setMasterPromptEditable] = useState(
+    !project.master_prompt,
+  );
   const [savingMasterPrompt, setSavingMasterPrompt] = useState(false);
   const [scenePrompt, setScenePrompt] = useState("");
   const [imageCount, setImageCount] = useState(1);
@@ -77,7 +89,9 @@ export function ProjectClient({ project }: { project: Project }) {
   const [images, setImages] = useState<{ filename: string; url: string }[]>([]);
   const [loadingImages, setLoadingImages] = useState(true);
   const [generating, setGenerating] = useState(false);
-  const [generationStep, setGenerationStep] = useState<"preparing" | "generating">("preparing");
+  const [generationStep, setGenerationStep] = useState<
+    "preparing" | "generating"
+  >("preparing");
   const [genError, setGenError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
@@ -125,7 +139,10 @@ export function ProjectClient({ project }: { project: Project }) {
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => ({}));
-        const msg = typeof detail?.detail === "string" ? detail.detail : detail?.detail?.msg || "Generation failed";
+        const msg =
+          typeof detail?.detail === "string"
+            ? detail.detail
+            : detail?.detail?.msg || "Generation failed";
         throw new Error(msg);
       }
       await res.json();
@@ -140,7 +157,9 @@ export function ProjectClient({ project }: { project: Project }) {
 
   async function handleDeleteImage(filename: string) {
     try {
-      const res = await fetch(`${base}/files/${encodeURIComponent(filename)}`, { method: "DELETE" });
+      const res = await fetch(`${base}/files/${encodeURIComponent(filename)}`, {
+        method: "DELETE",
+      });
       if (!res.ok) return;
       setImages((prev) => prev.filter((img) => img.filename !== filename));
     } catch {
@@ -148,7 +167,12 @@ export function ProjectClient({ project }: { project: Project }) {
     }
   }
 
-  async function patchProject(updates: { name?: string; description?: string | null; master_prompt?: string | null; task_type?: string }) {
+  async function patchProject(updates: {
+    name?: string;
+    description?: string | null;
+    master_prompt?: string | null;
+    task_type?: string;
+  }) {
     setSavingProject(true);
     try {
       const res = await fetch(`${projectsBase}/${projectId}`, {
@@ -201,7 +225,9 @@ export function ProjectClient({ project }: { project: Project }) {
   async function handleSaveMasterPromptAsDefault() {
     setSavingMasterPrompt(true);
     try {
-      const ok = await patchProject({ master_prompt: masterPrompt.trim() || null });
+      const ok = await patchProject({
+        master_prompt: masterPrompt.trim() || null,
+      });
       if (ok) setMasterPromptEditable(false);
     } finally {
       setSavingMasterPrompt(false);
@@ -214,10 +240,17 @@ export function ProjectClient({ project }: { project: Project }) {
   }
 
   async function handleDeleteProject() {
-    if (!confirm("Delete this project? This cannot be undone. Generated images will be removed.")) return;
+    if (
+      !confirm(
+        "Delete this project? This cannot be undone. Generated images will be removed.",
+      )
+    )
+      return;
     setDeleting(true);
     try {
-      const res = await fetch(`${projectsBase}/${projectId}`, { method: "DELETE" });
+      const res = await fetch(`${projectsBase}/${projectId}`, {
+        method: "DELETE",
+      });
       if (!res.ok) throw new Error("Delete failed");
       router.push("/dashboard");
     } catch {
@@ -269,28 +302,52 @@ export function ProjectClient({ project }: { project: Project }) {
                 className="text-lg font-bold h-9"
                 autoFocus
               />
-              <Button size="icon" variant="ghost" onClick={handleSaveName} disabled={savingProject || !editNameValue.trim()}>
-                {savingProject ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={handleSaveName}
+                disabled={savingProject || !editNameValue.trim()}
+              >
+                {savingProject ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Check className="size-4" />
+                )}
               </Button>
-              <Button size="icon" variant="ghost" onClick={() => { setEditingName(false); setEditNameValue(projectData.name); }}>
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => {
+                  setEditingName(false);
+                  setEditNameValue(projectData.name);
+                }}
+              >
                 <X className="size-4" />
               </Button>
             </div>
           ) : (
             <>
-              <h1 className="text-3xl font-bold tracking-tight">{projectData.name}</h1>
+              <h1 className="text-3xl font-bold tracking-tight">
+                {projectData.name}
+              </h1>
               <Button
                 size="icon"
                 variant="ghost"
                 className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
-                onClick={() => { setEditingName(true); setEditNameValue(projectData.name); }}
+                onClick={() => {
+                  setEditingName(true);
+                  setEditNameValue(projectData.name);
+                }}
                 aria-label="Rename project"
               >
                 <Pencil className="size-4" />
               </Button>
             </>
           )}
-          <Select value={projectData.task_type} onValueChange={(v) => v != null && handleTaskTypeChange(v)}>
+          <Select
+            value={projectData.task_type}
+            onValueChange={(v) => v != null && handleTaskTypeChange(v)}
+          >
             <SelectTrigger className="w-auto h-8 gap-1 border-none bg-secondary/50 px-2.5 text-xs font-medium">
               <SelectValue />
             </SelectTrigger>
@@ -314,23 +371,39 @@ export function ProjectClient({ project }: { project: Project }) {
             </Button>
             {optionsOpen && (
               <>
-                <div className="fixed inset-0 z-10" aria-hidden onClick={() => setOptionsOpen(false)} />
+                <div
+                  className="fixed inset-0 z-10"
+                  aria-hidden
+                  onClick={() => setOptionsOpen(false)}
+                />
                 <div className="absolute right-0 top-full z-20 mt-1 min-w-[180px] rounded-md border border-border bg-card py-1 shadow-lg">
                   <button
                     type="button"
                     className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-muted"
-                    onClick={() => { setOptionsOpen(false); setEditingDescription(true); }}
+                    onClick={() => {
+                      setOptionsOpen(false);
+                      setEditingDescription(true);
+                    }}
                   >
                     <Pencil className="size-3.5" />
-                    {projectData.description ? "Edit description" : "Add description"}
+                    {projectData.description
+                      ? "Edit description"
+                      : "Add description"}
                   </button>
                   <button
                     type="button"
                     className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-destructive/10"
-                    onClick={() => { setOptionsOpen(false); handleDeleteProject(); }}
+                    onClick={() => {
+                      setOptionsOpen(false);
+                      handleDeleteProject();
+                    }}
                     disabled={deleting}
                   >
-                    {deleting ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+                    {deleting ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="size-3.5" />
+                    )}
                     Delete project
                   </button>
                 </div>
@@ -348,10 +421,26 @@ export function ProjectClient({ project }: { project: Project }) {
               className="resize-none"
             />
             <div className="flex flex-col gap-1">
-              <Button size="icon" variant="ghost" onClick={handleSaveDescription} disabled={savingProject}>
-                {savingProject ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={handleSaveDescription}
+                disabled={savingProject}
+              >
+                {savingProject ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Check className="size-4" />
+                )}
               </Button>
-              <Button size="icon" variant="ghost" onClick={() => { setEditingDescription(false); setEditDescValue(projectData.description ?? ""); }}>
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => {
+                  setEditingDescription(false);
+                  setEditDescValue(projectData.description ?? "");
+                }}
+              >
                 <X className="size-4" />
               </Button>
             </div>
@@ -384,7 +473,8 @@ export function ProjectClient({ project }: { project: Project }) {
             <CardTitle>Generate</CardTitle>
           </div>
           <CardDescription>
-            Master prompt sets dataset context; scene prompt describes the specific scene. Choose model below. Up to 5 images per run.
+            Master prompt sets dataset context; scene prompt describes the
+            specific scene. Choose model below. Up to 20 images per run.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -398,7 +488,8 @@ export function ProjectClient({ project }: { project: Project }) {
                   <div>
                     <p className="font-medium">Generating images</p>
                     <p className="text-sm text-muted-foreground">
-                      {imageCount} {imageCount === 1 ? "image" : "images"} with {IMAGE_MODELS.find((m) => m.id === model)?.label ?? model}
+                      {imageCount} {imageCount === 1 ? "image" : "images"} with{" "}
+                      {IMAGE_MODELS.find((m) => m.id === model)?.label ?? model}
                     </p>
                   </div>
                 </div>
@@ -414,7 +505,10 @@ export function ProjectClient({ project }: { project: Project }) {
                     )}
                     <div>
                       <p className="text-sm font-medium">Preparing prompt</p>
-                      <p className="text-xs text-muted-foreground">Combining master + scene with synthetic dataset guidelines</p>
+                      <p className="text-xs text-muted-foreground">
+                        Combining master + scene with synthetic dataset
+                        guidelines
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -427,7 +521,9 @@ export function ProjectClient({ project }: { project: Project }) {
                     )}
                     <div>
                       <p className="text-sm font-medium">
-                        {generationStep === "generating" ? "Generating images…" : "Send to model"}
+                        {generationStep === "generating"
+                          ? "Generating images…"
+                          : "Send to model"}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         This may take a minute depending on model and count
@@ -451,12 +547,20 @@ export function ProjectClient({ project }: { project: Project }) {
                   </summary>
                   <div className="mt-2 space-y-2 text-xs">
                     <div>
-                      <span className="font-medium text-muted-foreground">Master:</span>
-                      <p className="mt-0.5 line-clamp-2 text-foreground">{masterPrompt}</p>
+                      <span className="font-medium text-muted-foreground">
+                        Master:
+                      </span>
+                      <p className="mt-0.5 line-clamp-2 text-foreground">
+                        {masterPrompt}
+                      </p>
                     </div>
                     <div>
-                      <span className="font-medium text-muted-foreground">Scene:</span>
-                      <p className="mt-0.5 line-clamp-2 text-foreground">{scenePrompt}</p>
+                      <span className="font-medium text-muted-foreground">
+                        Scene:
+                      </span>
+                      <p className="mt-0.5 line-clamp-2 text-foreground">
+                        {scenePrompt}
+                      </p>
                     </div>
                   </div>
                 </details>
@@ -466,7 +570,9 @@ export function ProjectClient({ project }: { project: Project }) {
             <form onSubmit={handleGenerate} className="space-y-4">
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                  <Label htmlFor="master-prompt">Master prompt (dataset context)</Label>
+                  <Label htmlFor="master-prompt">
+                    Master prompt (dataset context)
+                  </Label>
                   {!masterPromptEditable && (
                     <Button
                       type="button"
@@ -499,26 +605,39 @@ export function ProjectClient({ project }: { project: Project }) {
                         onClick={handleSaveMasterPromptAsDefault}
                         disabled={savingMasterPrompt || !masterPrompt.trim()}
                       >
-                        {savingMasterPrompt ? <Loader2 className="mr-2 size-3.5 animate-spin" /> : null}
+                        {savingMasterPrompt ? (
+                          <Loader2 className="mr-2 size-3.5 animate-spin" />
+                        ) : null}
                         Save as project default
                       </Button>
-                      {projectData.master_prompt != null && projectData.master_prompt !== "" && (
-                        <Button type="button" variant="ghost" size="sm" onClick={handleRevertMasterPrompt}>
-                          Revert to saved
-                        </Button>
-                      )}
+                      {projectData.master_prompt != null &&
+                        projectData.master_prompt !== "" && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleRevertMasterPrompt}
+                          >
+                            Revert to saved
+                          </Button>
+                        )}
                     </div>
                   </div>
                 ) : (
                   <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm text-foreground whitespace-pre-wrap">
                     {masterPrompt || (
-                      <span className="text-muted-foreground">No master prompt saved. Click “Edit master prompt” to add one.</span>
+                      <span className="text-muted-foreground">
+                        No master prompt saved. Click “Edit master prompt” to
+                        add one.
+                      </span>
                     )}
                   </div>
                 )}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="scene-prompt">Scene prompt (specific scene)</Label>
+                <Label htmlFor="scene-prompt">
+                  Scene prompt (specific scene)
+                </Label>
                 <Textarea
                   id="scene-prompt"
                   value={scenePrompt}
@@ -531,7 +650,10 @@ export function ProjectClient({ project }: { project: Project }) {
               </div>
               <div className="space-y-2">
                 <Label>Model</Label>
-                <Select value={model} onValueChange={(v) => v != null && setModel(v)}>
+                <Select
+                  value={model}
+                  onValueChange={(v) => v != null && setModel(v)}
+                >
                   <SelectTrigger className="w-full max-w-xs">
                     <SelectValue />
                   </SelectTrigger>
@@ -539,7 +661,9 @@ export function ProjectClient({ project }: { project: Project }) {
                     {IMAGE_MODELS.map((m) => (
                       <SelectItem key={m.id} value={m.id}>
                         <span className="font-medium">{m.label}</span>
-                        <span className="ml-2 text-muted-foreground">— {m.costHint}</span>
+                        <span className="ml-2 text-muted-foreground">
+                          — {m.costHint}
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -555,13 +679,23 @@ export function ProjectClient({ project }: { project: Project }) {
                     id="image-count"
                     type="number"
                     min={1}
-                    max={5}
+                    max={20}
                     value={imageCount}
-                    onChange={(e) => setImageCount(Math.min(5, Math.max(1, parseInt(e.target.value, 10) || 1)))}
+                    onChange={(e) =>
+                      setImageCount(
+                        Math.min(
+                          20,
+                          Math.max(1, parseInt(e.target.value, 10) || 1),
+                        ),
+                      )
+                    }
                     className="w-20"
                   />
                 </div>
-                <Button type="submit" disabled={generating || !masterPrompt.trim()}>
+                <Button
+                  type="submit"
+                  disabled={generating || !masterPrompt.trim()}
+                >
                   <ImageIcon className="mr-2 size-4" />
                   Generate images
                 </Button>
@@ -586,7 +720,11 @@ export function ProjectClient({ project }: { project: Project }) {
               onClick={handleExport}
               disabled={exporting || images.length === 0}
             >
-              {exporting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Download className="mr-2 size-4" />}
+              {exporting ? (
+                <Loader2 className="mr-2 size-4 animate-spin" />
+              ) : (
+                <Download className="mr-2 size-4" />
+              )}
               {exporting ? "Exporting…" : "Export ZIP"}
             </Button>
           </div>
@@ -600,7 +738,9 @@ export function ProjectClient({ project }: { project: Project }) {
               <Loader2 className="size-8 animate-spin text-muted-foreground" />
             </div>
           ) : images.length === 0 ? (
-            <p className="py-8 text-center text-muted-foreground">No images yet. Generate some above.</p>
+            <p className="py-8 text-center text-muted-foreground">
+              No images yet. Generate some above.
+            </p>
           ) : (
             <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {images.map((img) => (

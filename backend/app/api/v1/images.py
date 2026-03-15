@@ -56,7 +56,7 @@ router = APIRouter()
 class BatchGenerateRequest(BaseModel):
     master_prompt: str = Field(..., min_length=1, max_length=2000, description="Dataset context and general prompt")
     scene_prompt: str = Field(..., min_length=1, max_length=2000, description="Specific scene description")
-    count: int = Field(default=1, ge=1, le=5, description="Number of images to generate (max 5)")
+    count: int = Field(default=1, ge=1, le=20, description="Number of images to generate (max 20)")
     model: Literal["gpt-image-1-mini", "gpt-image-1", "gpt-image-1.5"] = Field(
         default="gpt-image-1-mini",
         description="OpenAI image model: gpt-image-1-mini (cheapest), gpt-image-1, gpt-image-1.5 (best quality, most expensive)",
@@ -172,7 +172,7 @@ def run_batch_generate(
     out_dir: Path,
     file_url_prefix: str,
 ) -> BatchGenerateResponse:
-    """Generate 1–5 images and write to out_dir. file_url_prefix is used for ImageItem.url (no trailing slash)."""
+    """Generate 1–20 images and write to out_dir. file_url_prefix is used for ImageItem.url (no trailing slash)."""
     combined = _build_prompt(master=body.master_prompt, scene=body.scene_prompt)
     batch_id = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -194,7 +194,7 @@ def run_batch_generate(
 
 @router.post("/generate", response_model=BatchGenerateResponse)
 def batch_generate(body: BatchGenerateRequest):
-    """Generate 1–5 images from master + scene prompt (global, not project-scoped)."""
+    """Generate 1–20 images from master + scene prompt (global, not project-scoped)."""
     try:
         return run_batch_generate(body, _generated_dir(), "/api/v1/images/files")
     except HTTPException:

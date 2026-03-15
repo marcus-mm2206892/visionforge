@@ -69,7 +69,7 @@ def project_batch_generate(
     db: Session = Depends(get_db),
     _: Project = Depends(_require_project),
 ):
-    """Generate 1–5 images for this project."""
+    """Generate 1–20 images for this project."""
     out_dir = _project_generated_dir(project_id)
     file_url_prefix = f"/api/v1/projects/{project_id}/images/files"
     try:
