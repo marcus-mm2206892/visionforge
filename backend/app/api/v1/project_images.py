@@ -54,11 +54,13 @@ def list_project_images(
     if not out_dir.is_dir():
         return {"images": []}
     prefix = f"/api/v1/projects/{project_id}/images/files"
-    images = [
-        {"filename": f.name, "url": f"{prefix}/{f.name}"}
+    files = [
+        f
         for f in out_dir.iterdir()
         if f.is_file() and _safe_filename(f.name)
     ]
+    files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    images = [{"filename": f.name, "url": f"{prefix}/{f.name}"} for f in files]
     return {"images": images}
 
 
