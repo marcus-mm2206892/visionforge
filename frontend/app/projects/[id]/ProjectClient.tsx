@@ -623,7 +623,7 @@ export function ProjectClient({ project }: { project: Project }) {
                       id="master-prompt"
                       value={masterPrompt}
                       onChange={(e) => setMasterPrompt(e.target.value)}
-                      rows={3}
+                      rows={18}
                       placeholder="e.g. Realistic disaster rescue dataset, high realism, natural lighting."
                       maxLength={PROMPT_MAX_LENGTH}
                       required
