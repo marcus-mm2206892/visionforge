@@ -67,6 +67,7 @@ type Project = {
 };
 
 const projectsBase = `${API_URL}/api/v1/projects`;
+const PROMPT_MAX_LENGTH = 3000;
 
 export function ProjectClient({ project }: { project: Project }) {
   const router = useRouter();
@@ -97,6 +98,10 @@ export function ProjectClient({ project }: { project: Project }) {
 
   const projectId = projectData.id;
   const base = `${API_URL}/api/v1/projects/${projectId}/images`;
+  const masterPromptLength = masterPrompt.length;
+  const scenePromptLength = scenePrompt.length;
+  const isMasterPromptTooLong = masterPromptLength > PROMPT_MAX_LENGTH;
+  const isScenePromptTooLong = scenePromptLength > PROMPT_MAX_LENGTH;
 
   async function fetchImages() {
     setLoadingImages(true);
@@ -117,6 +122,22 @@ export function ProjectClient({ project }: { project: Project }) {
 
   async function handleGenerate(e: React.FormEvent) {
     e.preventDefault();
+    if (!masterPrompt.trim()) {
+      setGenError("Master prompt is required.");
+      return;
+    }
+    if (!scenePrompt.trim()) {
+      setGenError("Scene prompt is required.");
+      return;
+    }
+    if (isMasterPromptTooLong) {
+      setGenError(`Master prompt must be ${PROMPT_MAX_LENGTH} characters or less.`);
+      return;
+    }
+    if (isScenePromptTooLong) {
+      setGenError(`Scene prompt must be ${PROMPT_MAX_LENGTH} characters or less.`);
+      return;
+    }
     setGenerating(true);
     setGenerationStep("preparing");
     setGenError(null);
@@ -139,10 +160,20 @@ export function ProjectClient({ project }: { project: Project }) {
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => ({}));
-        const msg =
-          typeof detail?.detail === "string"
-            ? detail.detail
-            : detail?.detail?.msg || "Generation failed";
+        const msg = (() => {
+          if (typeof detail?.detail === "string") return detail.detail;
+          if (Array.isArray(detail?.detail)) {
+            const first = detail.detail[0];
+            if (first?.msg) {
+              const loc = Array.isArray(first.loc)
+                ? first.loc.join(".")
+                : undefined;
+              return loc ? `${first.msg} (${loc})` : first.msg;
+            }
+          }
+          if (detail?.detail?.msg) return detail.detail.msg;
+          return "Generation failed";
+        })();
         throw new Error(msg);
       }
       await res.json();
@@ -594,9 +625,15 @@ export function ProjectClient({ project }: { project: Project }) {
                       onChange={(e) => setMasterPrompt(e.target.value)}
                       rows={3}
                       placeholder="e.g. Realistic disaster rescue dataset, high realism, natural lighting."
+                      maxLength={PROMPT_MAX_LENGTH}
                       required
                       className="resize-none"
                     />
+                    <p
+                      className={`text-xs ${isMasterPromptTooLong ? "text-destructive" : "text-muted-foreground"}`}
+                    >
+                      {masterPromptLength}/{PROMPT_MAX_LENGTH}
+                    </p>
                     <div className="flex flex-wrap gap-2">
                       <Button
                         type="button"
@@ -644,9 +681,20 @@ export function ProjectClient({ project }: { project: Project }) {
                   onChange={(e) => setScenePrompt(e.target.value)}
                   rows={3}
                   placeholder="e.g. Ground robot camera, collapsed building, victim hand in rubble."
+                  maxLength={PROMPT_MAX_LENGTH}
                   required
                   className="resize-none"
                 />
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs text-muted-foreground">
+                    Be specific; this field is required.
+                  </p>
+                  <p
+                    className={`text-xs ${isScenePromptTooLong ? "text-destructive" : "text-muted-foreground"}`}
+                  >
+                    {scenePromptLength}/{PROMPT_MAX_LENGTH}
+                  </p>
+                </div>
               </div>
               <div className="space-y-2">
                 <Label>Model</Label>
@@ -694,7 +742,13 @@ export function ProjectClient({ project }: { project: Project }) {
                 </div>
                 <Button
                   type="submit"
-                  disabled={generating || !masterPrompt.trim()}
+                  disabled={
+                    generating ||
+                    !masterPrompt.trim() ||
+                    !scenePrompt.trim() ||
+                    isMasterPromptTooLong ||
+                    isScenePromptTooLong
+                  }
                 >
                   <ImageIcon className="mr-2 size-4" />
                   Generate images
