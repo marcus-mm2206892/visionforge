@@ -54,7 +54,7 @@ router = APIRouter()
 
 
 class BatchGenerateRequest(BaseModel):
-    master_prompt: str = Field(..., min_length=1, max_length=3000, description="Dataset context and general prompt")
+    master_prompt: str = Field(..., min_length=1, max_length=5000, description="Dataset context and general prompt")
     scene_prompt: str = Field(..., min_length=1, max_length=3000, description="Specific scene description")
     count: int = Field(default=1, ge=1, le=20, description="Number of images to generate (max 20)")
     model: Literal["gpt-image-1-mini", "gpt-image-1", "gpt-image-1.5"] = Field(

@@ -67,7 +67,7 @@ type Project = {
 };
 
 const projectsBase = `${API_URL}/api/v1/projects`;
-const PROMPT_MAX_LENGTH = 3000;
+const PROMPT_MAX_LENGTH = 5000;
 
 export function ProjectClient({ project }: { project: Project }) {
   const router = useRouter();
