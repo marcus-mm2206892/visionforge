@@ -62,6 +62,7 @@ class BatchGenerateRequest(BaseModel):
         description="OpenAI image model: gpt-image-1-mini (cheapest), gpt-image-1, gpt-image-1.5 (best quality, most expensive)",
     )
     size: Literal["1024x1024", "1024x1536", "1536x1024"] = "1024x1024"
+    aspect_ratio: Literal["1:1", "2:1"] = "1:1"
     quality: Literal["low", "medium", "high"] = "low"
     output_format: Literal["png", "webp", "jpeg"] = "png"
 
@@ -87,6 +88,7 @@ class GenerateSingleRequest(BaseModel):
         description="OpenAI image model: gpt-image-1-mini (cheapest), gpt-image-1, gpt-image-1.5 (best quality, most expensive)",
     )
     size: Literal["1024x1024", "1024x1536", "1536x1024"] = "1024x1024"
+    aspect_ratio: Literal["1:1", "2:1"] = "1:1"
     quality: Literal["low", "medium", "high"] = "low"
     output_format: Literal["png", "webp", "jpeg"] = "png"
 
@@ -157,14 +159,42 @@ def _call_openai(
     return _GeneratedImage(filename=filename, bytes_=image_bytes, usage=usage)
 
 
+def _center_crop_to_aspect(image_bytes: bytes, output_format: str, aspect_ratio: str) -> bytes:
+    if aspect_ratio == "1:1":
+        return image_bytes
+    if aspect_ratio != "2:1":
+        return image_bytes
+
+    from PIL import Image
+
+    with Image.open(io.BytesIO(image_bytes)) as img:
+        w, h = img.size
+        target_h = int(round(w / 2))
+        if target_h <= 0 or target_h >= h:
+            return image_bytes
+
+        top = (h - target_h) // 2
+        cropped = img.crop((0, top, w, top + target_h))
+
+        fmt = {"png": "PNG", "webp": "WEBP", "jpeg": "JPEG"}.get(output_format, "PNG")
+        if fmt == "JPEG" and cropped.mode not in ("RGB", "L"):
+            cropped = cropped.convert("RGB")
+
+        buf = io.BytesIO()
+        cropped.save(buf, format=fmt)
+        return buf.getvalue()
+
+
 def _generate_one_image(req: GenerateSingleRequest) -> _GeneratedImage:
-    return _call_openai(
+    gen = _call_openai(
         prompt=_build_prompt(scene=req.prompt),
         model=req.model,
         size=req.size,
         quality=req.quality,
         output_format=req.output_format,
     )
+    cropped = _center_crop_to_aspect(gen.bytes_, req.output_format, req.aspect_ratio)
+    return _GeneratedImage(filename=gen.filename, bytes_=cropped, usage=gen.usage)
 
 
 def run_batch_generate(
@@ -185,9 +215,10 @@ def run_batch_generate(
             quality=body.quality,
             output_format=body.output_format,
         )
+        image_bytes = _center_crop_to_aspect(gen.bytes_, body.output_format, body.aspect_ratio)
         filename = f"batch-{batch_id}-{i}.{body.output_format}"
         filepath = out_dir / filename
-        filepath.write_bytes(gen.bytes_)
+        filepath.write_bytes(image_bytes)
         images.append(ImageItem(filename=filename, url=f"{file_url_prefix.rstrip('/')}/{filename}"))
     return BatchGenerateResponse(batch_id=batch_id, images=images)
 
