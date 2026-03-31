@@ -12,3 +12,8 @@ load_dotenv(_BACKEND_DIR / ".env")
 def get_openai_api_key() -> str | None:
     """OpenAI API key for image generation. Set OPENAI_API_KEY in backend/.env"""
     return os.getenv("OPENAI_API_KEY") or None
+
+
+def get_gemini_api_key() -> str | None:
+    """Google Gemini API key for image generation. Set GEMINI_API_KEY in backend/.env"""
+    return os.getenv("GEMINI_API_KEY") or None

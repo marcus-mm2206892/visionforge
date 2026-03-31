@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -16,6 +16,8 @@ import {
   Pencil,
   MoreVertical,
   X,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -46,6 +48,24 @@ const IMAGE_MODELS = [
     id: "gpt-image-1.5",
     label: "GPT Image 1.5",
     costHint: "Best quality, most expensive",
+  },
+] as const;
+
+const GEMINI_MODELS = [
+  {
+    id: "imagen-4.0-generate-001",
+    label: "Imagen 4",
+    costHint: "Standard quality",
+  },
+  {
+    id: "imagen-4.0-ultra-generate-001",
+    label: "Imagen 4 Ultra",
+    costHint: "Best quality",
+  },
+  {
+    id: "imagen-4.0-fast-generate-001",
+    label: "Imagen 4 Fast",
+    costHint: "Cheaper, faster",
   },
 ] as const;
 
@@ -83,10 +103,19 @@ export function ProjectClient({ project }: { project: Project }) {
   const [masterPromptEditable, setMasterPromptEditable] = useState(
     !project.master_prompt,
   );
+  const [masterPromptOpen, setMasterPromptOpen] = useState(!project.master_prompt);
   const [savingMasterPrompt, setSavingMasterPrompt] = useState(false);
   const [scenePrompt, setScenePrompt] = useState("");
   const [imageCount, setImageCount] = useState(1);
+  const [provider, setProvider] = useState<"openai" | "gemini">("openai");
   const [model, setModel] = useState<string>("gpt-image-1-mini");
+
+  const activeModels = provider === "openai" ? IMAGE_MODELS : GEMINI_MODELS;
+
+  function handleProviderChange(p: "openai" | "gemini") {
+    setProvider(p);
+    setModel(p === "openai" ? "gpt-image-1-mini" : "imagen-4.0-generate-001");
+  }
   const [images, setImages] = useState<{ filename: string; url: string }[]>([]);
   const [loadingImages, setLoadingImages] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -95,6 +124,17 @@ export function ProjectClient({ project }: { project: Project }) {
   >("preparing");
   const [genError, setGenError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [sceneMode, setSceneMode] = useState<"single" | "batch">("single");
+  const [batchSceneText, setBatchSceneText] = useState("");
+  const [batchProgress, setBatchProgress] = useState<{
+    current: number;
+    total: number;
+    scene: string;
+  } | null>(null);
+  const [batchErrors, setBatchErrors] = useState<
+    { index: number; error: string }[]
+  >([]);
+  const stopBatchRef = useRef(false);
 
   const projectId = projectData.id;
   const base = `${API_URL}/api/v1/projects/${projectId}/images`;
@@ -102,6 +142,15 @@ export function ProjectClient({ project }: { project: Project }) {
   const scenePromptLength = scenePrompt.length;
   const isMasterPromptTooLong = masterPromptLength > PROMPT_MAX_LENGTH;
   const isScenePromptTooLong = scenePromptLength > PROMPT_MAX_LENGTH;
+
+  function parseBatchPrompts(text: string): string[] {
+    return text
+      .split(/\n[ \t]*\n/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  const parsedBatchPrompts = parseBatchPrompts(batchSceneText);
 
   async function fetchImages() {
     setLoadingImages(true);
@@ -141,43 +190,10 @@ export function ProjectClient({ project }: { project: Project }) {
     setGenerating(true);
     setGenerationStep("preparing");
     setGenError(null);
-    // Brief "preparing" phase so the user sees the first step
     await new Promise((r) => setTimeout(r, 400));
     setGenerationStep("generating");
     try {
-      const res = await fetch(`${base}/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          master_prompt: masterPrompt,
-          scene_prompt: scenePrompt,
-          count: imageCount,
-          model,
-          size: "1536x1024",
-          aspect_ratio: "2:1",
-          quality: "low",
-          output_format: "png",
-        }),
-      });
-      if (!res.ok) {
-        const detail = await res.json().catch(() => ({}));
-        const msg = (() => {
-          if (typeof detail?.detail === "string") return detail.detail;
-          if (Array.isArray(detail?.detail)) {
-            const first = detail.detail[0];
-            if (first?.msg) {
-              const loc = Array.isArray(first.loc)
-                ? first.loc.join(".")
-                : undefined;
-              return loc ? `${first.msg} (${loc})` : first.msg;
-            }
-          }
-          if (detail?.detail?.msg) return detail.detail.msg;
-          return "Generation failed";
-        })();
-        throw new Error(msg);
-      }
-      await res.json();
+      await postGenerate(scenePrompt);
       await fetchImages();
     } catch (e) {
       setGenError(e instanceof Error ? e.message : "Generation failed");
@@ -185,6 +201,80 @@ export function ProjectClient({ project }: { project: Project }) {
       setGenerating(false);
       setGenerationStep("preparing");
     }
+  }
+
+  async function postGenerate(scene: string): Promise<void> {
+    const res = await fetch(`${base}/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        master_prompt: masterPrompt,
+        scene_prompt: scene,
+        count: imageCount,
+        provider,
+        model,
+        size: "1536x1024",
+        aspect_ratio: "2:1",
+        quality: "low",
+        output_format: "png",
+      }),
+    });
+    if (!res.ok) {
+      const detail = await res.json().catch(() => ({}));
+      const msg = (() => {
+        if (typeof detail?.detail === "string") return detail.detail;
+        if (Array.isArray(detail?.detail)) {
+          const first = detail.detail[0];
+          if (first?.msg) {
+            const loc = Array.isArray(first.loc) ? first.loc.join(".") : undefined;
+            return loc ? `${first.msg} (${loc})` : first.msg;
+          }
+        }
+        if (detail?.detail?.msg) return detail.detail.msg;
+        return "Generation failed";
+      })();
+      throw new Error(msg);
+    }
+    await res.json();
+  }
+
+  async function handleBatchRun(e: React.FormEvent) {
+    e.preventDefault();
+    if (!masterPrompt.trim()) {
+      setGenError("Master prompt is required.");
+      return;
+    }
+    const prompts = parseBatchPrompts(batchSceneText);
+    if (prompts.length === 0) {
+      setGenError("Paste at least one scene prompt.");
+      return;
+    }
+    setGenerating(true);
+    setGenError(null);
+    setBatchErrors([]);
+    stopBatchRef.current = false;
+
+    for (let i = 0; i < prompts.length; i++) {
+      if (stopBatchRef.current) break;
+      const scene = prompts[i];
+      setBatchProgress({ current: i + 1, total: prompts.length, scene });
+      setGenerationStep("preparing");
+      await new Promise((r) => setTimeout(r, 300));
+      setGenerationStep("generating");
+      try {
+        await postGenerate(scene);
+        await fetchImages();
+      } catch (err) {
+        setBatchErrors((prev) => [
+          ...prev,
+          { index: i + 1, error: err instanceof Error ? err.message : "Failed" },
+        ]);
+      }
+    }
+
+    setGenerating(false);
+    setBatchProgress(null);
+    setGenerationStep("preparing");
   }
 
   async function handleDeleteImage(filename: string) {
@@ -513,18 +603,52 @@ export function ProjectClient({ project }: { project: Project }) {
           {generating ? (
             <div className="rounded-lg border border-border bg-muted/30 p-6">
               <div className="space-y-6">
-                <div className="flex items-center gap-3">
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
-                    <Wand2 className="size-5 animate-pulse text-primary" />
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                      <Wand2 className="size-5 animate-pulse text-primary" />
+                    </div>
+                    <div>
+                      <p className="font-medium">
+                        {batchProgress
+                          ? `Batch — prompt ${batchProgress.current} of ${batchProgress.total}`
+                          : "Generating images"}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {imageCount} {imageCount === 1 ? "image" : "images"}{" "}
+                        with{" "}
+                        {activeModels.find((m) => m.id === model)?.label ??
+                          model}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-medium">Generating images</p>
-                    <p className="text-sm text-muted-foreground">
-                      {imageCount} {imageCount === 1 ? "image" : "images"} with{" "}
-                      {IMAGE_MODELS.find((m) => m.id === model)?.label ?? model}
-                    </p>
-                  </div>
+                  {batchProgress && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        stopBatchRef.current = true;
+                      }}
+                    >
+                      Stop
+                    </Button>
+                  )}
                 </div>
+
+                {batchProgress && (
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
+                      style={{
+                        width: `${Math.round(
+                          ((batchProgress.current - 1) / batchProgress.total) *
+                            100,
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                )}
 
                 <div className="space-y-3">
                   <div className="flex items-center gap-3">
@@ -564,14 +688,16 @@ export function ProjectClient({ project }: { project: Project }) {
                   </div>
                 </div>
 
-                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-primary transition-all duration-700 ease-out"
-                    style={{
-                      width: generationStep === "preparing" ? "30%" : "85%",
-                    }}
-                  />
-                </div>
+                {!batchProgress && (
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-primary transition-all duration-700 ease-out"
+                      style={{
+                        width: generationStep === "preparing" ? "30%" : "85%",
+                      }}
+                    />
+                  </div>
+                )}
 
                 <details className="rounded-md border border-border bg-background/50 p-3">
                   <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
@@ -591,7 +717,7 @@ export function ProjectClient({ project }: { project: Project }) {
                         Scene:
                       </span>
                       <p className="mt-0.5 line-clamp-2 text-foreground">
-                        {scenePrompt}
+                        {batchProgress ? batchProgress.scene : scenePrompt}
                       </p>
                     </div>
                   </div>
@@ -599,13 +725,26 @@ export function ProjectClient({ project }: { project: Project }) {
               </div>
             </div>
           ) : (
-            <form onSubmit={handleGenerate} className="space-y-4">
+            <form
+              onSubmit={sceneMode === "batch" ? handleBatchRun : handleGenerate}
+              className="space-y-4"
+            >
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                  <Label htmlFor="master-prompt">
+                  <button
+                    type="button"
+                    className="flex items-center gap-1.5 text-sm font-medium leading-none hover:text-foreground text-foreground"
+                    onClick={() => setMasterPromptOpen((o) => !o)}
+                    aria-expanded={masterPromptOpen}
+                  >
+                    {masterPromptOpen ? (
+                      <ChevronDown className="size-3.5 text-muted-foreground" />
+                    ) : (
+                      <ChevronRight className="size-3.5 text-muted-foreground" />
+                    )}
                     Master prompt (dataset context)
-                  </Label>
-                  {!masterPromptEditable && (
+                  </button>
+                  {masterPromptOpen && !masterPromptEditable && (
                     <Button
                       type="button"
                       variant="ghost"
@@ -614,11 +753,13 @@ export function ProjectClient({ project }: { project: Project }) {
                       onClick={() => setMasterPromptEditable(true)}
                     >
                       <Pencil className="size-3.5" />
-                      Edit master prompt
+                      Edit
                     </Button>
                   )}
                 </div>
-                {masterPromptEditable ? (
+                {masterPromptOpen && (
+                  <>
+                    {masterPromptEditable ? (
                   <div className="space-y-2">
                     <Textarea
                       id="master-prompt"
@@ -665,37 +806,122 @@ export function ProjectClient({ project }: { project: Project }) {
                   <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm text-foreground whitespace-pre-wrap">
                     {masterPrompt || (
                       <span className="text-muted-foreground">
-                        No master prompt saved. Click “Edit master prompt” to
-                        add one.
+                        No master prompt saved. Click “Edit” to add one.
                       </span>
                     )}
                   </div>
+                    )}
+                  </>
+                )}
+              </div>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <Label>Scene prompt</Label>
+                  <div className="flex rounded-md border border-border text-xs font-medium overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setSceneMode("single")}
+                      className={`px-3 py-1.5 transition-colors ${
+                        sceneMode === "single"
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                      }`}
+                    >
+                      Single
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSceneMode("batch")}
+                      className={`px-3 py-1.5 transition-colors ${
+                        sceneMode === "batch"
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                      }`}
+                    >
+                      Batch
+                    </button>
+                  </div>
+                </div>
+
+                {sceneMode === "single" ? (
+                  <>
+                    <Textarea
+                      id="scene-prompt"
+                      value={scenePrompt}
+                      onChange={(e) => setScenePrompt(e.target.value)}
+                      rows={3}
+                      placeholder="e.g. Ground robot camera, collapsed building, victim hand in rubble."
+                      maxLength={PROMPT_MAX_LENGTH}
+                      required
+                      className="resize-none"
+                    />
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs text-muted-foreground">
+                        Be specific; this field is required.
+                      </p>
+                      <p
+                        className={`text-xs ${isScenePromptTooLong ? "text-destructive" : "text-muted-foreground"}`}
+                      >
+                        {scenePromptLength}/{PROMPT_MAX_LENGTH}
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <Textarea
+                      id="batch-scene-prompts"
+                      value={batchSceneText}
+                      onChange={(e) => setBatchSceneText(e.target.value)}
+                      rows={12}
+                      placeholder={`Paste scene prompts here — separate each prompt with a blank line.\n\nExample:\nDark collapsed living room at night with broken walls and scattered debris...\n\nOutdoor nighttime building collapse with open sky and minimal moonlight...`}
+                      className="resize-y font-mono text-xs"
+                    />
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs text-muted-foreground">
+                        Separate prompts with a blank line. Each prompt runs{" "}
+                        <span className="font-medium text-foreground">
+                          {imageCount} {imageCount === 1 ? "image" : "images"}
+                        </span>{" "}
+                        sequentially.
+                      </p>
+                      {parsedBatchPrompts.length > 0 && (
+                        <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                          {parsedBatchPrompts.length}{" "}
+                          {parsedBatchPrompts.length === 1
+                            ? "prompt"
+                            : "prompts"}
+                        </span>
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="scene-prompt">
-                  Scene prompt (specific scene)
-                </Label>
-                <Textarea
-                  id="scene-prompt"
-                  value={scenePrompt}
-                  onChange={(e) => setScenePrompt(e.target.value)}
-                  rows={3}
-                  placeholder="e.g. Ground robot camera, collapsed building, victim hand in rubble."
-                  maxLength={PROMPT_MAX_LENGTH}
-                  required
-                  className="resize-none"
-                />
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs text-muted-foreground">
-                    Be specific; this field is required.
-                  </p>
-                  <p
-                    className={`text-xs ${isScenePromptTooLong ? "text-destructive" : "text-muted-foreground"}`}
-                  >
-                    {scenePromptLength}/{PROMPT_MAX_LENGTH}
-                  </p>
-                </div>
+                <Label>Provider</Label>
+                <Select
+                  value={provider}
+                  onValueChange={(v) =>
+                    v != null && handleProviderChange(v as "openai" | "gemini")
+                  }
+                >
+                  <SelectTrigger className="w-full max-w-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="openai">
+                      <span className="font-medium">OpenAI</span>
+                      <span className="ml-2 text-muted-foreground">
+                        — GPT Image models
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="gemini">
+                      <span className="font-medium">Google Gemini</span>
+                      <span className="ml-2 text-muted-foreground">
+                        — Imagen 3 models
+                      </span>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label>Model</Label>
@@ -707,7 +933,7 @@ export function ProjectClient({ project }: { project: Project }) {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {IMAGE_MODELS.map((m) => (
+                    {activeModels.map((m) => (
                       <SelectItem key={m.id} value={m.id}>
                         <span className="font-medium">{m.label}</span>
                         <span className="ml-2 text-muted-foreground">
@@ -718,7 +944,9 @@ export function ProjectClient({ project }: { project: Project }) {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  Mini is cheapest; 1.5 is best quality and most expensive.
+                  {provider === "openai"
+                    ? "Mini is cheapest; 1.5 is best quality and most expensive."
+                    : "Imagen 3 Fast is cheaper; Imagen 3 offers higher quality."}
                 </p>
               </div>
               <div className="flex flex-wrap items-end gap-4">
@@ -741,23 +969,53 @@ export function ProjectClient({ project }: { project: Project }) {
                     className="w-20"
                   />
                 </div>
-                <Button
-                  type="submit"
-                  disabled={
-                    generating ||
-                    !masterPrompt.trim() ||
-                    !scenePrompt.trim() ||
-                    isMasterPromptTooLong ||
-                    isScenePromptTooLong
-                  }
-                >
-                  <ImageIcon className="mr-2 size-4" />
-                  Generate images
-                </Button>
+                {sceneMode === "single" ? (
+                  <Button
+                    type="submit"
+                    disabled={
+                      generating ||
+                      !masterPrompt.trim() ||
+                      !scenePrompt.trim() ||
+                      isMasterPromptTooLong ||
+                      isScenePromptTooLong
+                    }
+                  >
+                    <ImageIcon className="mr-2 size-4" />
+                    Generate images
+                  </Button>
+                ) : (
+                  <Button
+                    type="submit"
+                    disabled={
+                      generating ||
+                      !masterPrompt.trim() ||
+                      parsedBatchPrompts.length === 0
+                    }
+                  >
+                    <ImageIcon className="mr-2 size-4" />
+                    Run{" "}
+                    {parsedBatchPrompts.length > 0
+                      ? `${parsedBatchPrompts.length} prompt${parsedBatchPrompts.length === 1 ? "" : "s"}`
+                      : "batch"}
+                  </Button>
+                )}
               </div>
             </form>
           )}
           {genError && <p className="text-sm text-destructive">{genError}</p>}
+          {batchErrors.length > 0 && !generating && (
+            <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 space-y-1">
+              <p className="text-xs font-medium text-destructive">
+                {batchErrors.length} prompt{batchErrors.length === 1 ? "" : "s"} failed:
+              </p>
+              {batchErrors.map((e) => (
+                <p key={e.index} className="text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">#{e.index}</span>{" "}
+                  — {e.error}
+                </p>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 
