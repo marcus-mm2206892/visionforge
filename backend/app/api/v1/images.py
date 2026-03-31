@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.core.settings import get_openai_api_key
+from app.core.settings import get_gemini_api_key, get_openai_api_key
 
 
 # Hidden system prompt for synthetic dataset generation. Not exposed in API.
@@ -57,9 +57,16 @@ class BatchGenerateRequest(BaseModel):
     master_prompt: str = Field(..., min_length=1, max_length=5000, description="Dataset context and general prompt")
     scene_prompt: str = Field(..., min_length=1, max_length=3000, description="Specific scene description")
     count: int = Field(default=1, ge=1, le=20, description="Number of images to generate (max 20)")
-    model: Literal["gpt-image-1-mini", "gpt-image-1", "gpt-image-1.5"] = Field(
+    provider: Literal["openai", "gemini"] = Field(
+        default="openai",
+        description="Image generation provider: openai or gemini",
+    )
+    model: Literal[
+        "gpt-image-1-mini", "gpt-image-1", "gpt-image-1.5",
+        "imagen-4.0-generate-001", "imagen-4.0-ultra-generate-001", "imagen-4.0-fast-generate-001",
+    ] = Field(
         default="gpt-image-1-mini",
-        description="OpenAI image model: gpt-image-1-mini (cheapest), gpt-image-1, gpt-image-1.5 (best quality, most expensive)",
+        description="Model to use for generation. Must be compatible with chosen provider.",
     )
     size: Literal["1024x1024", "1024x1536", "1536x1024"] = "1024x1024"
     aspect_ratio: Literal["1:1", "2:1"] = "1:1"
@@ -83,9 +90,16 @@ class ExportRequest(BaseModel):
 
 class GenerateSingleRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=4000)
-    model: Literal["gpt-image-1-mini", "gpt-image-1", "gpt-image-1.5"] = Field(
+    provider: Literal["openai", "gemini"] = Field(
+        default="openai",
+        description="Image generation provider: openai or gemini",
+    )
+    model: Literal[
+        "gpt-image-1-mini", "gpt-image-1", "gpt-image-1.5",
+        "imagen-4.0-generate-001", "imagen-4.0-ultra-generate-001", "imagen-4.0-fast-generate-001",
+    ] = Field(
         default="gpt-image-1-mini",
-        description="OpenAI image model: gpt-image-1-mini (cheapest), gpt-image-1, gpt-image-1.5 (best quality, most expensive)",
+        description="Model to use for generation. Must be compatible with chosen provider.",
     )
     size: Literal["1024x1024", "1024x1536", "1536x1024"] = "1024x1024"
     aspect_ratio: Literal["1:1", "2:1"] = "1:1"
@@ -159,6 +173,52 @@ def _call_openai(
     return _GeneratedImage(filename=filename, bytes_=image_bytes, usage=usage)
 
 
+def _call_gemini(
+    prompt: str,
+    model: str = "imagen-4.0-generate-001",
+    output_format: str = "png",
+) -> _GeneratedImage:
+    api_key = get_gemini_api_key()
+    if not api_key:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not set in backend/.env")
+
+    from google import genai
+    from google.genai import types
+
+    client = genai.Client(api_key=api_key)
+    mime_type = f"image/{'jpeg' if output_format == 'jpeg' else 'png'}"
+    response = client.models.generate_images(
+        model=model,
+        prompt=prompt,
+        config=types.GenerateImagesConfig(
+            number_of_images=1,
+            output_mime_type=mime_type,
+        ),
+    )
+
+    if not response.generated_images:
+        raise HTTPException(status_code=502, detail="No image data returned from Gemini")
+
+    image_bytes = response.generated_images[0].image.image_bytes
+    ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    ext = "jpeg" if output_format == "jpeg" else "png"
+    filename = f"image-{ts}.{ext}"
+    return _GeneratedImage(filename=filename, bytes_=image_bytes, usage=None)
+
+
+def _call_provider(
+    prompt: str,
+    provider: str = "openai",
+    model: str = "gpt-image-1-mini",  # openai default; gemini defaults to imagen-4.0-generate-001
+    size: str = "1024x1024",
+    quality: str = "low",
+    output_format: str = "png",
+) -> _GeneratedImage:
+    if provider == "gemini":
+        return _call_gemini(prompt=prompt, model=model, output_format=output_format)
+    return _call_openai(prompt=prompt, model=model, size=size, quality=quality, output_format=output_format)
+
+
 def _center_crop_to_aspect(image_bytes: bytes, output_format: str, aspect_ratio: str) -> bytes:
     if aspect_ratio == "1:1":
         return image_bytes
@@ -186,14 +246,19 @@ def _center_crop_to_aspect(image_bytes: bytes, output_format: str, aspect_ratio:
 
 
 def _generate_one_image(req: GenerateSingleRequest) -> _GeneratedImage:
-    gen = _call_openai(
+    gen = _call_provider(
         prompt=_build_prompt(scene=req.prompt),
+        provider=req.provider,
         model=req.model,
         size=req.size,
         quality=req.quality,
         output_format=req.output_format,
     )
-    cropped = _center_crop_to_aspect(gen.bytes_, req.output_format, req.aspect_ratio)
+    # Gemini handles its own sizing; only crop for OpenAI
+    if req.provider == "openai":
+        cropped = _center_crop_to_aspect(gen.bytes_, req.output_format, req.aspect_ratio)
+    else:
+        cropped = gen.bytes_
     return _GeneratedImage(filename=gen.filename, bytes_=cropped, usage=gen.usage)
 
 
@@ -208,14 +273,19 @@ def run_batch_generate(
     out_dir.mkdir(parents=True, exist_ok=True)
     images: list[ImageItem] = []
     for i in range(body.count):
-        gen = _call_openai(
+        gen = _call_provider(
             prompt=combined,
+            provider=body.provider,
             model=body.model,
             size=body.size,
             quality=body.quality,
             output_format=body.output_format,
         )
-        image_bytes = _center_crop_to_aspect(gen.bytes_, body.output_format, body.aspect_ratio)
+        # Gemini handles its own sizing; only crop for OpenAI
+        if body.provider == "openai":
+            image_bytes = _center_crop_to_aspect(gen.bytes_, body.output_format, body.aspect_ratio)
+        else:
+            image_bytes = gen.bytes_
         filename = f"batch-{batch_id}-{i}.{body.output_format}"
         filepath = out_dir / filename
         filepath.write_bytes(image_bytes)
